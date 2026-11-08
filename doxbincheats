@@ -1,0 +1,632 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
+local VirtualUser = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+local SETTINGS_FILE = "doxbincheats_settings.json"
+local Settings = { Theme = "Blue" }
+
+pcall(function()
+    if isfile and readfile and isfile(SETTINGS_FILE) then
+        local data = HttpService:JSONDecode(readfile(SETTINGS_FILE))
+        if type(data) == "table" then
+            for k, v in pairs(data) do Settings[k] = v end
+        end
+    end
+end)
+
+local function saveSettings()
+    pcall(function()
+        if writefile then writefile(SETTINGS_FILE, HttpService:JSONEncode(Settings)) end
+    end)
+end
+
+local Themes = {
+    { "Blue",   Color3.fromRGB(19, 119, 255) },
+    { "Red",    Color3.fromRGB(235, 64, 64) },
+    { "Green",  Color3.fromRGB(60, 200, 110) },
+    { "Purple", Color3.fromRGB(150, 90, 255) },
+    { "Pink",   Color3.fromRGB(255, 100, 180) },
+    { "Orange", Color3.fromRGB(255, 150, 40) },
+    { "Cyan",   Color3.fromRGB(0, 200, 220) },
+    { "Yellow", Color3.fromRGB(245, 210, 60) },
+}
+
+local function getThemeColor(name)
+    for _, t in ipairs(Themes) do
+        if t[1] == name then return t[2] end
+    end
+    return Themes[1][2]
+end
+
+local BASE_ACCENT = getThemeColor(Settings.Theme) -- the color the library is created with
+local lastApplied = BASE_ACCENT
+
+local function getContainers()
+    local list = {}
+    local ok, hui = pcall(function() return gethui and gethui() end)
+    if ok and hui then table.insert(list, hui) end
+    table.insert(list, CoreGui)
+    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if pg then table.insert(list, pg) end
+    return list
+end
+
+local function snapshot()
+    local set = {}
+    for _, c in ipairs(getContainers()) do
+        local ok, kids = pcall(function() return c:GetChildren() end)
+        if ok then
+            for _, k in ipairs(kids) do set[k] = true end
+        end
+    end
+    return set
+end
+
+local before = snapshot()
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whiteboybunny/shitassfuckasslua/refs/heads/main/bracket-custom.lua"))()
+local Window = Library:CreateWindow("doxbincheats", BASE_ACCENT)
+Window:UpdateBind(Enum.KeyCode.O, true)
+
+local GuiRoots = {}
+local function findRoots()
+    table.clear(GuiRoots)
+    for inst in pairs(snapshot()) do
+        if not before[inst] then table.insert(GuiRoots, inst) end
+    end
+end
+findRoots()
+
+local alive = true
+local Connections = {}
+local function track(conn)
+    table.insert(Connections, conn)
+    return conn
+end
+
+local WalkSpeed = 16
+local JumpPower = 50
+local FlyEnabled = false
+local FlySpeed = 50
+local InfiniteJump = false
+local Godmode = false
+local NoClip = false
+
+local character, humanoid, hrp
+local bodyVelocity, bodyGyro
+local flyRenderConnection, godConnection, noclipConnection
+local flyAngle = 0
+local noclipParts = {}
+
+local startFly, stopFly, setNoClip -- forward declarations
+
+local function near(a, b)
+    return math.abs(a.R - b.R) < 0.02 and math.abs(a.G - b.G) < 0.02 and math.abs(a.B - b.B) < 0.02
+end
+
+local propCache = setmetatable({}, { __mode = "k" })
+local function colorProps(inst)
+    local cached = propCache[inst]
+    if cached then return cached end
+    local p = {}
+    if inst:IsA("GuiObject") then
+        table.insert(p, "BackgroundColor3")
+        table.insert(p, "BorderColor3")
+    end
+    if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+        table.insert(p, "TextColor3")
+    end
+    if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+        table.insert(p, "ImageColor3")
+    end
+    if inst:IsA("ScrollingFrame") then
+        table.insert(p, "ScrollBarImageColor3")
+    end
+    if inst:IsA("UIStroke") then
+        table.insert(p, "Color")
+    end
+    propCache[inst] = p
+    return p
+end
+
+local function recolor(color)
+    if #GuiRoots == 0 then findRoots() end
+    for _, root in ipairs(GuiRoots) do
+        if root.Parent then
+            for _, d in ipairs(root:GetDescendants()) do
+                for _, prop in ipairs(colorProps(d)) do
+                    local ok, v = pcall(function() return d[prop] end)
+                    if ok and typeof(v) == "Color3" and v ~= color
+                        and (near(v, BASE_ACCENT) or near(v, lastApplied)) then
+                        pcall(function() d[prop] = color end)
+                    end
+                end
+            end
+        end
+    end
+    lastApplied = color
+end
+
+local rainbowConnection
+local function setRainbow(state)
+    if rainbowConnection then
+        rainbowConnection:Disconnect()
+        rainbowConnection = nil
+    end
+    if state then
+        local acc = 0
+        rainbowConnection = RunService.Heartbeat:Connect(function(dt)
+            acc += dt
+            if acc < 0.1 then return end
+            acc = 0
+            recolor(Color3.fromHSV((tick() * 0.12) % 1, 0.85, 1))
+        end)
+    else
+        recolor(getThemeColor(Settings.Theme))
+    end
+end
+
+task.spawn(function()
+    while alive do
+        task.wait(0.4)
+        if not rainbowConnection and lastApplied ~= BASE_ACCENT then
+            recolor(lastApplied)
+        end
+    end
+end)
+
+local function applyHumanoidStats()
+    if not humanoid then return end
+    humanoid.UseJumpPower = true
+    humanoid.WalkSpeed = WalkSpeed
+    humanoid.JumpPower = JumpPower
+end
+
+local function hookGodmode()
+    if godConnection then godConnection:Disconnect() godConnection = nil end
+    if not (Godmode and humanoid) then return end
+    humanoid.MaxHealth = math.huge
+    humanoid.Health = math.huge
+    godConnection = humanoid.HealthChanged:Connect(function()
+        if Godmode and humanoid.Health < humanoid.MaxHealth then
+            humanoid.Health = humanoid.MaxHealth
+        end
+    end)
+end
+
+local function getCharacter()
+    character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    humanoid = character:WaitForChild("Humanoid")
+    hrp = character:WaitForChild("HumanoidRootPart")
+    applyHumanoidStats()
+end
+
+track(LocalPlayer.CharacterAdded:Connect(function()
+    local wasFlying = FlyEnabled
+    stopFly()
+    table.clear(noclipParts)
+    task.wait(0.5)
+    getCharacter()
+    hookGodmode()
+    if wasFlying then startFly() end
+end))
+
+getCharacter()
+
+track(RunService.Heartbeat:Connect(function()
+    if humanoid and humanoid.Parent and not FlyEnabled then
+        if humanoid.WalkSpeed ~= WalkSpeed then humanoid.WalkSpeed = WalkSpeed end
+        if humanoid.JumpPower ~= JumpPower then humanoid.JumpPower = JumpPower end
+    end
+end))
+
+setNoClip = function(state)
+    NoClip = state
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+    if state then
+        noclipConnection = RunService.Stepped:Connect(function()
+            if not character then return end
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    noclipParts[part] = true
+                    part.CanCollide = false
+                end
+            end
+        end)
+    else
+        for part in pairs(noclipParts) do
+            if part.Parent then part.CanCollide = true end
+        end
+        table.clear(noclipParts)
+    end
+end
+
+local MainTab = Window:CreateTab("Main")
+local MovementGroup = MainTab:CreateGroupbox("Movement", "Left")
+
+MovementGroup:CreateSlider("WalkSpeed", 16, 500, 16, function(v)
+    WalkSpeed = v
+    if humanoid then humanoid.WalkSpeed = v end
+end)
+
+MovementGroup:CreateSlider("JumpPower", 50, 500, 50, function(v)
+    JumpPower = v
+    if humanoid then
+        humanoid.UseJumpPower = true
+        humanoid.JumpPower = v
+    end
+end)
+
+MovementGroup:CreateToggle("Infinite Jump", function(state)
+    InfiniteJump = state
+end)
+
+track(UserInputService.JumpRequest:Connect(function()
+    if InfiniteJump and humanoid then
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end))
+
+MovementGroup:CreateToggle("NoClip", function(state)
+    setNoClip(state)
+end)
+
+MovementGroup:CreateToggle("Godmode", function(state)
+    Godmode = state
+    if state then
+        hookGodmode()
+    else
+        if godConnection then godConnection:Disconnect() godConnection = nil end
+        if humanoid then
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+        end
+    end
+end)
+
+local SpinEnabled, SpinSpeed = false, 10
+local BunnyHop = false
+local ClickTP = false
+
+local CharacterGroup = MainTab:CreateGroupbox("Character", "Left")
+
+CharacterGroup:CreateToggle("Spin", function(state)
+    SpinEnabled = state
+end)
+
+CharacterGroup:CreateSlider("Spin Speed", 1, 50, 10, function(v)
+    SpinSpeed = v
+end)
+
+CharacterGroup:CreateToggle("Bunny Hop (hold Space)", function(state)
+    BunnyHop = state
+end)
+
+CharacterGroup:CreateToggle("Click TP (Alt + Click)", function(state)
+    ClickTP = state
+end)
+
+track(UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or not ClickTP then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        and UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+        and hrp and hrp.Parent and Mouse.Hit then
+        hrp.CFrame = CFrame.new(Mouse.Hit.Position + Vector3.new(0, 3, 0))
+    end
+end))
+
+CharacterGroup:CreateButton("TP to Random Player", function()
+    local candidates = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local root = plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        if root then table.insert(candidates, root) end
+    end
+    if #candidates > 0 and hrp and hrp.Parent then
+        hrp.CFrame = candidates[math.random(#candidates)].CFrame + Vector3.new(0, 3, 0)
+    end
+end)
+
+CharacterGroup:CreateButton("Reset Character", function()
+    if humanoid then humanoid:ChangeState(Enum.HumanoidStateType.Dead) end
+end)
+
+local OriginalGravity = workspace.Gravity
+local AntiAFK = false
+local fullbrightConnection
+local originalLighting
+
+local WorldGroup = MainTab:CreateGroupbox("World", "Left")
+
+local gravityTouched = false
+WorldGroup:CreateSlider("Gravity", 0, 400, 196, function(v)
+    -- ignore the library's initial default call so the game's own gravity isn't overwritten
+    if not gravityTouched and v == 196 then return end
+    gravityTouched = true
+    workspace.Gravity = v
+end)
+
+WorldGroup:CreateButton("Reset Gravity", function()
+    workspace.Gravity = OriginalGravity
+end)
+
+local function setFullbright(state)
+    if fullbrightConnection then
+        fullbrightConnection:Disconnect()
+        fullbrightConnection = nil
+    end
+    if state then
+        originalLighting = originalLighting or {
+            Brightness = Lighting.Brightness,
+            ClockTime = Lighting.ClockTime,
+            FogEnd = Lighting.FogEnd,
+            GlobalShadows = Lighting.GlobalShadows,
+            Ambient = Lighting.Ambient,
+            OutdoorAmbient = Lighting.OutdoorAmbient,
+        }
+        fullbrightConnection = RunService.Heartbeat:Connect(function()
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 14
+            Lighting.FogEnd = 1e6
+            Lighting.GlobalShadows = false
+            Lighting.Ambient = Color3.fromRGB(178, 178, 178)
+            Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
+        end)
+    elseif originalLighting then
+        for prop, value in pairs(originalLighting) do
+            pcall(function() Lighting[prop] = value end)
+        end
+        originalLighting = nil
+    end
+end
+
+WorldGroup:CreateToggle("Fullbright", function(state)
+    setFullbright(state)
+end)
+
+WorldGroup:CreateToggle("Anti-AFK", function(state)
+    AntiAFK = state
+end)
+
+track(LocalPlayer.Idled:Connect(function()
+    if AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
+end))
+
+local ESPEnabled = false
+local espObjects = {}
+local fovValue
+
+local VisualsGroup = MainTab:CreateGroupbox("Visuals", "Left")
+
+local function espParent()
+    local ok, hui = pcall(function() return gethui and gethui() end)
+    return (ok and hui) or CoreGui
+end
+
+local function removeESP(plr)
+    if espObjects[plr] then
+        espObjects[plr]:Destroy()
+        espObjects[plr] = nil
+    end
+end
+
+local function addESP(plr)
+    if plr == LocalPlayer or not ESPEnabled then return end
+    removeESP(plr)
+    local char = plr.Character
+    if not char then return end
+    local h = Instance.new("Highlight")
+    h.Adornee = char
+    h.FillColor = Color3.fromRGB(255, 60, 60)
+    h.FillTransparency = 0.6
+    h.OutlineColor = Color3.new(1, 1, 1)
+    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    local ok = pcall(function() h.Parent = espParent() end)
+    if not ok then h.Parent = char end
+    espObjects[plr] = h
+end
+
+local function hookPlayer(plr)
+    if plr == LocalPlayer then return end
+    track(plr.CharacterAdded:Connect(function()
+        task.wait(0.2)
+        addESP(plr)
+    end))
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end
+track(Players.PlayerAdded:Connect(hookPlayer))
+track(Players.PlayerRemoving:Connect(removeESP))
+
+local function setESP(state)
+    ESPEnabled = state
+    if state then
+        for _, plr in ipairs(Players:GetPlayers()) do addESP(plr) end
+    else
+        for plr in pairs(espObjects) do removeESP(plr) end
+    end
+end
+
+VisualsGroup:CreateToggle("Player ESP", function(state)
+    setESP(state)
+end)
+
+VisualsGroup:CreateSlider("Field of View", 30, 120, 70, function(v)
+    -- ignore the library's initial default call so the game's own FOV isn't overwritten
+    if fovValue == nil and v == 70 then return end
+    fovValue = v
+end)
+
+VisualsGroup:CreateButton("Reset FOV", function()
+    fovValue = nil
+    if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = 70 end
+end)
+
+track(RunService.RenderStepped:Connect(function()
+    if SpinEnabled and hrp and hrp.Parent and not FlyEnabled then
+        hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(SpinSpeed), 0)
+    end
+    if BunnyHop and humanoid and humanoid.Parent and not FlyEnabled
+        and UserInputService:IsKeyDown(Enum.KeyCode.Space)
+        and humanoid.FloorMaterial ~= Enum.Material.Air then
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+    if fovValue and workspace.CurrentCamera then
+        workspace.CurrentCamera.FieldOfView = fovValue
+    end
+end))
+
+local FlyTab = Window:CreateTab("Fly")
+local FlyGroup = FlyTab:CreateGroupbox("Flight", "Left")
+
+FlyGroup:CreateSlider("Fly Speed", 10, 300, 50, function(v)
+    FlySpeed = v
+end)
+
+stopFly = function()
+    FlyEnabled = false
+    if flyRenderConnection then flyRenderConnection:Disconnect() flyRenderConnection = nil end
+    if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
+    if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+    flyAngle = 0
+    if humanoid and humanoid.Parent then
+        humanoid.PlatformStand = false
+        humanoid.WalkSpeed = WalkSpeed
+    end
+end
+
+startFly = function()
+    if FlyEnabled then return end
+    if not (hrp and hrp.Parent and humanoid) then getCharacter() end
+    if not hrp then return end
+
+    FlyEnabled = true
+    humanoid.PlatformStand = true
+
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    bodyVelocity.Velocity = Vector3.zero
+    bodyVelocity.Parent = hrp
+
+    bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+    bodyGyro.P = 5000
+    bodyGyro.D = 500
+    bodyGyro.CFrame = hrp.CFrame
+    bodyGyro.Parent = hrp
+
+    flyRenderConnection = RunService.RenderStepped:Connect(function(dt)
+        if not FlyEnabled or not hrp or not hrp.Parent then return end
+
+        local camera = workspace.CurrentCamera
+        local look = camera.CFrame.LookVector
+        local right = camera.CFrame.RightVector
+        local moveDir = Vector3.zero
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir -= look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir -= right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir += Vector3.yAxis end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir -= Vector3.yAxis end
+
+        local tilt = 0
+        if moveDir.Magnitude > 0 then
+            moveDir = moveDir.Unit * FlySpeed
+            tilt = math.clamp(moveDir:Dot(right) / FlySpeed, -1, 1) * math.rad(25)
+        end
+        flyAngle = flyAngle + (tilt - flyAngle) * math.min(dt * 8, 1)
+
+        bodyGyro.CFrame = CFrame.new(hrp.Position, hrp.Position + look) * CFrame.Angles(0, 0, -flyAngle)
+        bodyVelocity.Velocity = moveDir
+    end)
+end
+
+FlyGroup:CreateToggle("Fly", function(state)
+    if state then startFly() else stopFly() end
+end)
+
+FlyGroup:CreateButton("Re-sync Fly", function()
+    if FlyEnabled then
+        stopFly()
+        task.wait(0.1)
+        startFly()
+    end
+end)
+
+local ScriptsTab = Window:CreateTab("Scripts")
+local ScriptsGroup = ScriptsTab:CreateGroupbox("Your Scripts", "Left")
+
+local function AddScriptButton(label, code)
+    ScriptsGroup:CreateButton(label, function()
+        local ok, err = pcall(code)
+        if not ok then
+            warn("[" .. label .. "] " .. tostring(err))
+        end
+    end)
+end
+
+AddScriptButton("Example: Rejoin", function()
+    game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+end)
+
+AddScriptButton("Example: Print Position", function()
+    print(hrp and hrp.Position or "no character")
+end)
+
+local SettingsTab = Window:CreateTab("Settings")
+
+local ThemeGroup = SettingsTab:CreateGroupbox("Themes", "Left")
+
+for _, theme in ipairs(Themes) do
+    local name, color = theme[1], theme[2]
+    ThemeGroup:CreateButton(name, function()
+        Settings.Theme = name
+        saveSettings()
+        if rainbowConnection then
+            print("[Theme] Saved '" .. name .. "'. Turn Rainbow off to apply it.")
+        else
+            recolor(color)
+        end
+    end)
+end
+
+ThemeGroup:CreateToggle("Rainbow Accent", function(state)
+    setRainbow(state)
+end)
+
+local MenuGroup = SettingsTab:CreateGroupbox("Menu", "Left")
+
+MenuGroup:CreateButton("Unload Menu", function()
+    alive = false
+    stopFly()
+    setNoClip(false)
+    setRainbow(false)
+    setESP(false)
+    setFullbright(false)
+    workspace.Gravity = OriginalGravity
+    fovValue = nil
+    SpinEnabled, BunnyHop, ClickTP, AntiAFK = false, false, false, false
+    if godConnection then godConnection:Disconnect() godConnection = nil end
+    for _, c in ipairs(Connections) do c:Disconnect() end
+    table.clear(Connections)
+    if humanoid then
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+    end
+    for _, root in ipairs(GuiRoots) do
+        pcall(function() root:Destroy() end)
+    end
+end)
