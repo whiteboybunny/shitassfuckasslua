@@ -578,12 +578,16 @@ local function AddScriptButton(label, code)
     end)
 end
 
-AddScriptButton("Example: Rejoin", function()
-    game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+AddScriptButton("Dex++ (decomp fixed edition)", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jodta/my-scripts/refs/heads/main/Dex%2B%2B/Decompiler%20Fix.lua"))()
 end)
 
-AddScriptButton("Example: Print Position", function()
-    print(hrp and hrp.Position or "no character")
+AddScriptButton("Infinite Yield", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+end)
+
+AddScriptButton("Brainrot Police (esore script)", function()
+    loadstring(game:HttpGet("https://loadstring.net/raw/PSH2TOWUGP"))()
 end)
 
 local SettingsTab = Window:CreateTab("Settings")
