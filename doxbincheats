@@ -590,6 +590,298 @@ AddScriptButton("Brainrot Police (esore script)", function()
     loadstring(game:HttpGet("https://loadstring.net/raw/PSH2TOWUGP"))()
 end)
 
+
+-- EXTRA UTILITIES TAB (client-side HUD, camera, crosshair, and session tools)
+local ExtrasTab = Window:CreateTab("Extras")
+local HudGroup = ExtrasTab:CreateGroupbox("Performance HUD", "Left")
+local CrosshairGroup = ExtrasTab:CreateGroupbox("Crosshair Editor", "Right")
+local CameraGroup = ExtrasTab:CreateGroupbox("Camera & Session", "Left")
+local PlayerInfoGroup = ExtrasTab:CreateGroupbox("Player Information", "Right")
+
+local StatsService = game:GetService("Stats")
+local sessionStarted = tick()
+local hudEnabled = false
+local hudGui
+local hudLabel
+local hudFps = true
+local hudPing = true
+local hudClock = true
+local hudSession = true
+local fpsCounter = 0
+local fpsElapsed = 0
+local currentFPS = 0
+
+local function getPingText()
+    local ok, result = pcall(function()
+        return StatsService.Network.ServerStatsItem["Data Ping"]:GetValueString()
+    end)
+    return ok and tostring(result) or "N/A"
+end
+
+local function getHudParent()
+    local ok, hui = pcall(function() return gethui and gethui() end)
+    if ok and hui then return hui end
+    return CoreGui
+end
+
+local function buildHud()
+    if hudGui then hudGui:Destroy() end
+    hudGui = Instance.new("ScreenGui")
+    hudGui.Name = "DoxbinExtrasHUD"
+    hudGui.ResetOnSpawn = false
+    hudGui.IgnoreGuiInset = true
+    hudGui.DisplayOrder = 999
+    hudGui.Parent = getHudParent()
+
+    hudLabel = Instance.new("TextLabel")
+    hudLabel.Name = "Readout"
+    hudLabel.AnchorPoint = Vector2.new(1, 0)
+    hudLabel.Position = UDim2.new(1, -16, 0, 16)
+    hudLabel.Size = UDim2.fromOffset(210, 92)
+    hudLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+    hudLabel.BackgroundTransparency = 0.18
+    hudLabel.BorderSizePixel = 0
+    hudLabel.Font = Enum.Font.GothamSemibold
+    hudLabel.TextSize = 13
+    hudLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    hudLabel.TextXAlignment = Enum.TextXAlignment.Left
+    hudLabel.TextYAlignment = Enum.TextYAlignment.Top
+    hudLabel.TextWrapped = true
+    hudLabel.Parent = hudGui
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, 9)
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.Parent = hudLabel
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 7)
+    corner.Parent = hudLabel
+end
+
+local function updateHudText()
+    if not hudEnabled or not hudLabel then return end
+    local rows = {}
+    if hudFps then table.insert(rows, "FPS: " .. tostring(currentFPS)) end
+    if hudPing then table.insert(rows, "Ping: " .. getPingText()) end
+    if hudClock then table.insert(rows, "Time: " .. os.date("%H:%M:%S")) end
+    if hudSession then
+        local elapsed = math.max(0, math.floor(tick() - sessionStarted))
+        local mins = math.floor(elapsed / 60)
+        local secs = elapsed % 60
+        table.insert(rows, string.format("Session: %02d:%02d", mins, secs))
+    end
+    hudLabel.Text = #rows > 0 and table.concat(rows, "\n") or "HUD enabled"
+    hudLabel.Size = UDim2.fromOffset(210, math.max(34, 12 + (#rows * 19)))
+end
+
+HudGroup:CreateToggle("Enable Performance HUD", function(state)
+    hudEnabled = state
+    if state then
+        buildHud()
+        updateHudText()
+    elseif hudGui then
+        hudGui:Destroy()
+        hudGui = nil
+        hudLabel = nil
+    end
+end)
+
+HudGroup:CreateToggle("Show FPS", function(state)
+    hudFps = state
+    updateHudText()
+end, {Default = true})
+
+HudGroup:CreateToggle("Show Ping", function(state)
+    hudPing = state
+    updateHudText()
+end, {Default = true})
+
+HudGroup:CreateToggle("Show Clock", function(state)
+    hudClock = state
+    updateHudText()
+end, {Default = true})
+
+HudGroup:CreateToggle("Show Session Timer", function(state)
+    hudSession = state
+    updateHudText()
+end, {Default = true})
+
+track(RunService.RenderStepped:Connect(function(dt)
+    fpsCounter += 1
+    fpsElapsed += dt
+    if fpsElapsed >= 1 then
+        currentFPS = math.floor(fpsCounter / fpsElapsed + 0.5)
+        fpsCounter = 0
+        fpsElapsed = 0
+        updateHudText()
+    end
+end))
+
+-- Crosshair editor: entirely local overlay.
+local crosshairEnabled = false
+local crosshairGui
+local crosshairLines = {}
+local crosshairSize = 8
+local crosshairGap = 5
+local crosshairThickness = 2
+local crosshairColor = Color3.fromRGB(255, 255, 255)
+
+local function removeCrosshair()
+    if crosshairGui then crosshairGui:Destroy() end
+    crosshairGui = nil
+    table.clear(crosshairLines)
+end
+
+local function refreshCrosshair()
+    if not crosshairEnabled then return end
+    removeCrosshair()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "DoxbinCrosshair"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 1000
+    gui.Parent = getHudParent()
+    crosshairGui = gui
+
+    local function makeLine(name, size, position)
+        local line = Instance.new("Frame")
+        line.Name = name
+        line.AnchorPoint = Vector2.new(0.5, 0.5)
+        line.Size = size
+        line.Position = position
+        line.BackgroundColor3 = crosshairColor
+        line.BorderSizePixel = 0
+        line.Parent = gui
+        crosshairLines[name] = line
+    end
+
+    local cx, cy = 0.5, 0.5
+    makeLine("Top", UDim2.fromOffset(crosshairThickness, crosshairSize),
+        UDim2.new(cx, 0, cy, -(crosshairGap + crosshairSize / 2)))
+    makeLine("Bottom", UDim2.fromOffset(crosshairThickness, crosshairSize),
+        UDim2.new(cx, 0, cy, crosshairGap + crosshairSize / 2))
+    makeLine("Left", UDim2.fromOffset(crosshairSize, crosshairThickness),
+        UDim2.new(cx, -(crosshairGap + crosshairSize / 2), cy, 0))
+    makeLine("Right", UDim2.fromOffset(crosshairSize, crosshairThickness),
+        UDim2.new(cx, crosshairGap + crosshairSize / 2, cy, 0))
+end
+
+CrosshairGroup:CreateToggle("Enable Custom Crosshair", function(state)
+    crosshairEnabled = state
+    if state then refreshCrosshair() else removeCrosshair() end
+end)
+
+CrosshairGroup:CreateSlider("Size", 2, 24, crosshairSize, function(value)
+    crosshairSize = value
+    refreshCrosshair()
+end)
+
+CrosshairGroup:CreateSlider("Gap", 0, 24, crosshairGap, function(value)
+    crosshairGap = value
+    refreshCrosshair()
+end)
+
+CrosshairGroup:CreateSlider("Thickness", 1, 6, crosshairThickness, function(value)
+    crosshairThickness = value
+    refreshCrosshair()
+end)
+
+CrosshairGroup:CreateColorPicker("Crosshair Color", crosshairColor, function(value)
+    crosshairColor = value
+    refreshCrosshair()
+end)
+
+CrosshairGroup:CreateButton("Reset Crosshair", function()
+    crosshairSize, crosshairGap, crosshairThickness = 8, 5, 2
+    crosshairColor = Color3.fromRGB(255, 255, 255)
+    refreshCrosshair()
+end)
+
+-- A local preview hitmarker; actual hit detection depends on each game's own damage system.
+local function showHitmarkerPreview()
+    local parent = getHudParent()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "DoxbinHitmarkerPreview"
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 1001
+    gui.Parent = parent
+    for i = 1, 4 do
+        local line = Instance.new("Frame")
+        line.AnchorPoint = Vector2.new(0.5, 0.5)
+        line.Size = UDim2.fromOffset(2, 13)
+        line.Position = UDim2.new(0.5, (i <= 2 and -1 or 1) * (i % 2 == 1 and -7 or 7), 0.5, (i <= 2 and -1 or 1) * 7)
+        line.Rotation = (i <= 2) and -45 or 45
+        line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        line.BorderSizePixel = 0
+        line.Parent = gui
+    end
+    task.delay(0.35, function()
+        if gui then gui:Destroy() end
+    end)
+end
+
+CrosshairGroup:CreateButton("Preview Hitmarker", showHitmarkerPreview)
+
+-- Camera and player information helpers.
+local originalCameraMin = LocalPlayer.CameraMinZoomDistance
+local originalCameraMax = LocalPlayer.CameraMaxZoomDistance
+local originalCameraFov = workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView or 70
+
+CameraGroup:CreateSlider("Max Camera Zoom", 5, 100, originalCameraMax, function(value)
+    LocalPlayer.CameraMinZoomDistance = math.min(originalCameraMin, value)
+    LocalPlayer.CameraMaxZoomDistance = value
+end)
+
+CameraGroup:CreateSlider("Camera FOV", 40, 120, originalCameraFov, function(value)
+    if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = value end
+end)
+
+CameraGroup:CreateButton("Reset Camera", function()
+    LocalPlayer.CameraMinZoomDistance = originalCameraMin
+    LocalPlayer.CameraMaxZoomDistance = originalCameraMax
+    if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = originalCameraFov end
+end)
+
+CameraGroup:CreateButton("Reset Session Timer", function()
+    sessionStarted = tick()
+    updateHudText()
+end)
+
+local function copyText(value)
+    local ok = pcall(function()
+        if setclipboard then setclipboard(tostring(value)) else error("Clipboard unavailable") end
+    end)
+    if not ok then
+        print("[Extras] " .. tostring(value))
+    end
+end
+
+PlayerInfoGroup:CreateLabel("Local Player")
+PlayerInfoGroup:CreateButton("Copy Username", function()
+    copyText(LocalPlayer.Name)
+end)
+PlayerInfoGroup:CreateButton("Copy Display Name", function()
+    copyText(LocalPlayer.DisplayName)
+end)
+PlayerInfoGroup:CreateButton("Copy User ID", function()
+    copyText(LocalPlayer.UserId)
+end)
+PlayerInfoGroup:CreateButton("Copy Game / Place ID", function()
+    copyText(game.GameId .. " / " .. game.PlaceId)
+end)
+PlayerInfoGroup:CreateButton("Copy Server Job ID", function()
+    copyText(game.JobId)
+end)
+PlayerInfoGroup:CreateButton("Print Player List", function()
+    local names = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        table.insert(names, player.Name .. " (" .. player.DisplayName .. ")")
+    end
+    print("[Extras] Players:\n" .. table.concat(names, "\n"))
+end)
+
+
 local SettingsTab = Window:CreateTab("Settings")
 
 local ThemeGroup = SettingsTab:CreateGroupbox("Themes", "Left")
@@ -620,6 +912,13 @@ MenuGroup:CreateButton("Unload Menu", function()
     setRainbow(false)
     setESP(false)
     setFullbright(false)
+    hudEnabled = false
+    if hudGui then hudGui:Destroy() hudGui = nil end
+    crosshairEnabled = false
+    removeCrosshair()
+    if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = originalCameraFov end
+    LocalPlayer.CameraMinZoomDistance = originalCameraMin
+    LocalPlayer.CameraMaxZoomDistance = originalCameraMax
     workspace.Gravity = OriginalGravity
     fovValue = nil
     SpinEnabled, BunnyHop, ClickTP, AntiAFK = false, false, false, false
